@@ -99,24 +99,11 @@ public class passportWS {
         DbManager db = new DbManager();
         try {
             if (Configuration.getInstance().isIpFilter()) {
-                ProfileBO profile = db.getProfile(userName);
                 Long checkIp = db.getCheckIp(userName);
                 if (checkIp != null && checkIp.longValue() > 0L)
                     if (ipCheck == null || ipCheck.length() == 0) {
                         strResult = "no";
-                    } else if (profile != null) {
-                        if (profile.getUserIP() != null && profile.getUserIP().length() > 0) {
-                            String regex = profile.getUserIP();
-                            int iResult = IpUtils.matchIp(ipCheck, regex);
-                            if (iResult != 0)
-                                strResult = "no"; 
-                        } else if (profile.getAllowIp() != null && profile.getAllowIp().length() > 0) {
-                            String regex = profile.getUserIP();
-                            int iResult = IpUtils.matchAllowIp(ipCheck, regex);
-                            if (iResult != 0)
-                                strResult = "no"; 
-                        } 
-                    }  
+                    } 
             } 
             if (strResult == null)
                 strResult = validate(userName, password, domainCode); 
