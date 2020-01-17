@@ -13,6 +13,7 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import md5.PasswordService;
 import org.w3c.dom.Document;
 
 /**
@@ -126,90 +127,6 @@ public class DbManager extends BaseDAO {
         } finally {
             closeResource(stmt);
         } 
-    }
-
-    public int temporaryLockWhenPasswordIncorrectAndNotBlocked(String userName, ProfileBO profile) throws SQLException {
-        int ret = 0;
-        PreparedStatement stmt = null;
-        PreparedStatement stmtLog = null;
-        ResultSet rs = null;
-        StringBuilder sbQr = new StringBuilder("select LAST_BLOCK_DATE, TEMP_LOCK_COUNT, ");
-        sbQr.append("LAST_LOGIN_FAILURE, LOGIN_FAILURE_COUNT, ").append("USER_ID from users WHERE user_name = ? ");
-        if (this.conn == null) {
-            this.logger.error("Connection is null");
-            return 0;
-        } 
-        try {
-            stmt = this.conn.prepareStatement(sbQr.toString());
-            stmt.setString(1, userName.toLowerCase());
-            rs = stmt.executeQuery();
-            closeResource(stmt);
-            if (rs.next()) {
-                long userId = rs.getLong("USER_ID");
-                Long tempLockCount = Long.valueOf(rs.getLong("TEMP_LOCK_COUNT"));
-                Long loginFailCount = Long.valueOf(rs.getLong("LOGIN_FAILURE_COUNT"));
-                Long newLoginFailCount = Long.valueOf((loginFailCount != null) ? (loginFailCount.longValue() + 1L) : 1L);
-                Long newTmpLockCount = Long.valueOf((tempLockCount != null) ? (tempLockCount.longValue() + 1L) : 1L);
-                if (newLoginFailCount != null && newLoginFailCount.compareTo(profile.getLoginFailAllow()) >= 0) {
-                    StringBuilder sbTmpLock = new StringBuilder();
-                    sbTmpLock.append("update users set LOGIN_FAILURE_COUNT = 0 , ").append("LAST_LOGIN_FAILURE = systimestamp, ").append("LAST_BLOCK_DATE = systimestamp, ").append("TEMP_LOCK_COUNT = ? ").append("where USER_ID = ? ");
-                    stmt = this.conn.prepareStatement(sbTmpLock.toString());
-                    stmt.setLong(1, newTmpLockCount.longValue());
-                    stmt.setLong(2, userId);
-                    int isTmpLock = stmt.executeUpdate();
-                    closeResource(stmt);
-                    if (profile.getMaxTmpLock() != null && newTmpLockCount.longValue() >= profile.getMaxTmpLock().longValue()) {
-                        ret = lockAccount(userId);
-                        StringBuilder sbLogLockUser = new StringBuilder();
-                        sbLogLockUser.append("insert into Event_Log(event_id, user_name, action, event_date,").append("description, ip, wan, mac, actor, user_id)").append("values (log_seq.nextVal,?, 'LOCK_USER', ").append(" systimestamp, ").append("'Khoa tai khoan do da qua so lan bi tam khoa', ?, ?, ?, ?, ?)");
-                        stmtLog = this.conn.prepareStatement(sbLogLockUser.toString());
-                        stmtLog.setString(1, userName);
-                        stmtLog.setString(2, this.ip);
-                        stmtLog.setString(3, this.wan);
-                        stmtLog.setString(4, this.mac);
-                        stmtLog.setString(5, "Passport");
-                        stmtLog.setLong(6, userId);
-                        stmtLog.executeUpdate();
-                        String resetTmpLockCount = "update users set TEMP_LOCK_COUNT = 0 where user_id = ? ";
-                        stmt = this.conn.prepareStatement(resetTmpLockCount);
-                        stmt.setLong(1, userId);
-                        stmt.executeUpdate();
-                        if (ret == 0)
-                            return 0; 
-                        if (Configuration.getInstance().isSendSms())
-                            SmsConfig.getInstance().sendLockingSmsTmp(userId, userName, getCellphone(userName)); 
-                        return 2;
-                    } 
-                    StringBuilder sbLogTmpLock = new StringBuilder();
-                    sbLogTmpLock.append("insert into Event_Log(event_id, user_name, action, event_date,").append("description, ip, wan, mac, actor, user_id)").append("values (log_seq.nextVal,?, 'TEMP_LOCK_USER', ").append(" systimestamp, ").append("'Tam khoa tai khoan do da qua so lan dang nhap sai mat khau', ?, ?, ?, ?, ?)");
-                    stmtLog = this.conn.prepareStatement(sbLogTmpLock.toString());
-                    stmtLog.setString(1, userName);
-                    stmtLog.setString(2, this.ip);
-                    stmtLog.setString(3, this.wan);
-                    stmtLog.setString(4, this.mac);
-                    stmtLog.setString(5, "Passport");
-                    stmtLog.setLong(6, userId);
-                    stmtLog.executeUpdate();
-                    return isTmpLock;
-                } 
-                if (newLoginFailCount != null && newLoginFailCount.compareTo(profile.getLoginFailAllow()) < 0) {
-                    StringBuilder sbIncLoginFailCount = new StringBuilder();
-                    sbIncLoginFailCount.append("update users set LOGIN_FAILURE_COUNT = ? , ").append("LAST_LOGIN_FAILURE = systimestamp ").append("where USER_ID = ? ");
-                    stmt = this.conn.prepareStatement(sbIncLoginFailCount.toString());
-                    stmt.setLong(1, newLoginFailCount.longValue());
-                    stmt.setLong(2, userId);
-                    stmt.executeUpdate();
-                    return 0;
-                } 
-            } 
-        } catch (Exception e) {
-            this.logger.error(e, e);
-        } finally {
-            closeResource(stmt);
-            closeResource(stmtLog);
-            closeResource(rs);
-        } 
-        return ret;
     }
 
     public AuthenticationErrorCode checkLackingInfo(Users ubo) {
